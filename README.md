@@ -184,9 +184,4 @@ This project is **MIT Licensed**.
 
 ---
 
-```
 
----
-
-✅ Do you want me to **add screenshots and badges (e.g., IPFS, Polygon, MetaMask, Hardhat)** to make it look professional for GitHub? Or should I also **write instructions for deploying the frontend on Vercel and smart contract on Amoy**?
-```
