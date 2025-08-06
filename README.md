@@ -1,6 +1,6 @@
-Here’s the GitHub **`README.md`** content in proper **Markdown code format**:
 
-```markdown
+
+
 # 📄 Web3 Document Verification System
 
 A full-stack decentralized application that allows users to **upload documents**, **extract key data**, **store on IPFS**, **record hashes on the blockchain**, and **verify authenticity** using smart contracts and wallet login.
