@@ -2,7 +2,9 @@ import { spawn } from "child_process";
 
 export const runOCR = (filePath) => {
   return new Promise((resolve, reject) => {
-    const python = spawn("python", ["-Xutf8", "ocr.py", filePath]);
+    // Use the virtual environment Python
+    const pythonPath = "F:/IEEE-INTERNSHIP/.venv/Scripts/python.exe";
+    const python = spawn(pythonPath, ["-Xutf8", "ocr.py", filePath]);
     let dataBuffer = "";
     let errorBuffer = "";
 
@@ -11,14 +13,21 @@ export const runOCR = (filePath) => {
 
     python.on("close", (code) => {
       if (code !== 0) {
-        return reject(errorBuffer);
+        console.error("Python OCR Error:", errorBuffer);
+        return reject(new Error(`OCR failed with code ${code}: ${errorBuffer}`));
       }
       try {
         const parsed = JSON.parse(dataBuffer);
         resolve(parsed);
       } catch (err) {
-        reject("Failed to parse OCR output: " + err.message);
+        console.error("JSON Parse Error:", dataBuffer);
+        reject(new Error("Failed to parse OCR output: " + err.message));
       }
+    });
+
+    python.on("error", (err) => {
+      console.error("Python Process Error:", err);
+      reject(new Error("Failed to start Python process: " + err.message));
     });
   });
 };

@@ -45,13 +45,46 @@ data = {"raw_text": raw_text}
 
 # --- Document Type Detection ---
 doc_type = "unknown"
-if re.search(r"\b\d{4}\s?\d{4}\s?\d{4}\b", raw_text.replace(" ", "")):
-    doc_type = "aadhaar"
-elif re.search(r"[A-Z]{5}\d{4}[A-Z]", raw_text) or "Income Tax Department" in raw_text:
-    doc_type = "pan"
-elif re.search(r"Roll\s*No|Total\s*Marks", raw_text, re.IGNORECASE):
-    doc_type = "marksheet"
+
+# Enhanced Aadhaar detection with multiple patterns
+aadhaar_patterns = [
+    r"\b\d{4}\s?\d{4}\s?\d{4}\b",  # Standard pattern with optional spaces
+    r"\b\d{12}\b",  # 12 consecutive digits
+    r"[0-9Oo]{4}\s*[0-9Oo]{4}\s*[0-9Oo]{4}",  # Pattern with O/o that OCR might confuse
+    r"\d{4}\s*\d{4}\s*\d{4}",  # Basic pattern
+]
+
+# Check for Aadhaar patterns
+for pattern in aadhaar_patterns:
+    if re.search(pattern, raw_text.replace(" ", "")):
+        doc_type = "aadhaar"
+        break
+
+# Also check for common Aadhaar keywords
+if doc_type == "unknown":
+    aadhaar_keywords = ["Government of India", "GOVERNMENT OF INDIA", "Unique Identification", "UIDAI"]
+    for keyword in aadhaar_keywords:
+        if keyword in raw_text:
+            # If we find Aadhaar keywords and any 12-digit pattern, it's likely Aadhaar
+            if re.search(r"\d{4}.*\d{4}.*\d{4}", raw_text):
+                doc_type = "aadhaar"
+                break
+
+# PAN detection
+if doc_type == "unknown":
+    if re.search(r"[A-Z]{5}\d{4}[A-Z]", raw_text) or "Income Tax Department" in raw_text:
+        doc_type = "pan"
+
+# Marksheet detection
+if doc_type == "unknown":
+    if re.search(r"Roll\s*No|Total\s*Marks", raw_text, re.IGNORECASE):
+        doc_type = "marksheet"
+
 data["document_type"] = doc_type
+
+# Debug output for troubleshooting
+print(f"DEBUG: Detected document type: {doc_type}", file=sys.stderr)
+print(f"DEBUG: Raw text sample: {raw_text[:200]}...", file=sys.stderr)
 
 # --- Field Extraction ---
 if doc_type == "aadhaar":
@@ -67,12 +100,29 @@ if doc_type == "aadhaar":
         dob_match = re.search(r"\b\d{2}[/-]\d{2}[/-]\d{4}\b", line)
         if dob_match:
             data["dob"] = dob_match.group()
+            # Look for name in previous lines, but skip very short lines and common OCR artifacts
             for j in range(i - 1, -1, -1):  # previous non-empty line
                 line_text = results[j].strip()
-                if line_text and not re.search(r"DOB|IDOB|Date", line_text, re.IGNORECASE):
+                # Skip if line is too short, contains only numbers/symbols, or common OCR artifacts
+                if (line_text and 
+                    len(line_text) > 2 and  # Must be longer than 2 characters
+                    not re.search(r"DOB|IDOB|Date|^\d+$|^[A-Z]$|^[0-9A-Z]{1,2}$", line_text, re.IGNORECASE) and
+                    not re.match(r"^[^a-zA-Z]*$", line_text)):  # Must contain letters
                     data["name"] = line_text
                     break
             break
+    
+    # If no name found using DOB method, try to find a name pattern
+    if "name" not in data or len(data.get("name", "")) <= 2:
+        for line in results:
+            line_text = line.strip()
+            # Look for lines that look like names (multiple words with letters)
+            if (len(line_text) > 5 and 
+                re.search(r"[a-zA-Z]", line_text) and  # Contains letters
+                len(line_text.split()) >= 2 and  # Has at least 2 words
+                not re.search(r"\d{4}\s*\d{4}\s*\d{4}|DOB|Date|Government|India|MALE|FEMALE", line_text, re.IGNORECASE)):
+                data["name"] = line_text
+                break
 
     gender = re.search(r"\b(FEMALE|MALE|Female|Male|male|female)\b", raw_text)
     if gender:

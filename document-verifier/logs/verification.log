@@ -1,0 +1,26 @@
+{"timestamp":"2025-09-08T07:18:47.652Z","level":"VERIFICATION","message":"Aadhaar document successfully verified","metadata":{"aadhaarNumber":"7995 7938 6751","verifiedName":"Aashish Vatwani","confidence":0.95},"pid":23384}
+{"timestamp":"2025-09-08T07:18:47.654Z","level":"VERIFICATION","message":"Document verified successfully","metadata":{"documentType":"aadhaar","confidence":0.95},"pid":23384}
+{"timestamp":"2025-09-08T07:30:21.820Z","level":"VERIFICATION","message":"Aadhaar document successfully verified","metadata":{"aadhaarNumber":"7995 7938 6751","verifiedName":"Aashish Vatwani","confidence":0.95},"pid":23384}
+{"timestamp":"2025-09-08T07:30:21.823Z","level":"VERIFICATION","message":"Document verified successfully","metadata":{"documentType":"aadhaar","confidence":0.95},"pid":23384}
+{"timestamp":"2025-09-08T07:32:04.649Z","level":"VERIFICATION","message":"Aadhaar document successfully verified","metadata":{"aadhaarNumber":"7995 7938 6751","verifiedName":"Aashish Vatwani","confidence":0.95},"pid":23384}
+{"timestamp":"2025-09-08T07:32:04.651Z","level":"VERIFICATION","message":"Document verified successfully","metadata":{"documentType":"aadhaar","confidence":0.95},"pid":23384}
+{"timestamp":"2025-09-08T07:35:43.680Z","level":"VERIFICATION","message":"Aadhaar document successfully verified","metadata":{"aadhaarNumber":"7995 7938 6751","verifiedName":"Aashish Vatwani","confidence":0.95},"pid":23384}
+{"timestamp":"2025-09-08T07:35:43.682Z","level":"VERIFICATION","message":"Document verified successfully","metadata":{"documentType":"aadhaar","confidence":0.95},"pid":23384}
+{"timestamp":"2025-09-08T07:52:54.342Z","level":"VERIFICATION","message":"Aadhaar document successfully verified","metadata":{"aadhaarNumber":"7995 7938 6751","verifiedName":"Aashish Vatwani","confidence":0.95},"pid":21384}
+{"timestamp":"2025-09-08T07:52:54.343Z","level":"VERIFICATION","message":"Document verified successfully","metadata":{"documentType":"aadhaar","confidence":0.95},"pid":21384}
+{"timestamp":"2025-09-08T07:55:32.121Z","level":"VERIFICATION","message":"Aadhaar document successfully verified","metadata":{"aadhaarNumber":"7995 7938 6751","verifiedName":"Aashish Vatwani","confidence":0.95},"pid":21384}
+{"timestamp":"2025-09-08T07:55:32.124Z","level":"VERIFICATION","message":"Document verified successfully","metadata":{"documentType":"aadhaar","confidence":0.95},"pid":21384}
+{"timestamp":"2025-09-08T08:44:38.289Z","level":"VERIFICATION","message":"Aadhaar document successfully verified","metadata":{"aadhaarNumber":"7995 7938 6751","verifiedName":"Aashish Vatwani","confidence":0.95},"pid":34428}
+{"timestamp":"2025-09-08T08:44:38.291Z","level":"VERIFICATION","message":"Document verified successfully","metadata":{"documentType":"aadhaar","confidence":0.95},"pid":34428}
+{"timestamp":"2025-09-08T08:44:38.584Z","level":"VERIFICATION","message":"Aadhaar document successfully verified","metadata":{"aadhaarNumber":"7995 7938 6751","verifiedName":"Aashish Vatwani","confidence":0.95},"pid":34428}
+{"timestamp":"2025-09-08T08:44:38.585Z","level":"VERIFICATION","message":"Document verified successfully","metadata":{"documentType":"aadhaar","confidence":0.95},"pid":34428}
+{"timestamp":"2025-09-08T08:52:23.282Z","level":"VERIFICATION","message":"Aadhaar document successfully verified","metadata":{"aadhaarNumber":"7995 7938 6751","verifiedName":"Aashish Vatwani","confidence":0.95},"pid":23500}
+{"timestamp":"2025-09-08T08:52:23.284Z","level":"VERIFICATION","message":"Document verified successfully","metadata":{"documentType":"aadhaar","confidence":0.95},"pid":23500}
+{"timestamp":"2025-09-08T08:52:23.877Z","level":"VERIFICATION","message":"Aadhaar document successfully verified","metadata":{"aadhaarNumber":"7995 7938 6751","verifiedName":"Aashish Vatwani","confidence":0.95},"pid":23500}
+{"timestamp":"2025-09-08T08:52:23.878Z","level":"VERIFICATION","message":"Document verified successfully","metadata":{"documentType":"aadhaar","confidence":0.95},"pid":23500}
+{"timestamp":"2025-09-08T08:55:27.123Z","level":"VERIFICATION","message":"Aadhaar document successfully verified","metadata":{"aadhaarNumber":"7995 7938 6751","verifiedName":"Aashish Vatwani","confidence":0.95},"pid":23500}
+{"timestamp":"2025-09-08T08:55:27.127Z","level":"VERIFICATION","message":"Document verified successfully","metadata":{"documentType":"aadhaar","confidence":0.95},"pid":23500}
+{"timestamp":"2025-09-08T08:55:27.232Z","level":"VERIFICATION","message":"Aadhaar document successfully verified","metadata":{"aadhaarNumber":"7995 7938 6751","verifiedName":"Aashish Vatwani","confidence":0.95},"pid":23500}
+{"timestamp":"2025-09-08T08:55:27.233Z","level":"VERIFICATION","message":"Document verified successfully","metadata":{"documentType":"aadhaar","confidence":0.95},"pid":23500}
+{"timestamp":"2025-09-08T08:59:44.111Z","level":"VERIFICATION","message":"Aadhaar document successfully verified","metadata":{"aadhaarNumber":"7995 7938 6751","verifiedName":"Aashish Vatwani","confidence":0.95},"pid":23500}
+{"timestamp":"2025-09-08T08:59:44.112Z","level":"VERIFICATION","message":"Document verified successfully","metadata":{"documentType":"aadhaar","confidence":0.95},"pid":23500}

@@ -1,9 +1,10 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { useUser } from '@clerk/clerk-react';
+import QRCode from 'qrcode';
 import { uploadToIPFS, testPinataConnection } from '../services/ipf5Services';
 import { encryptFile, calculateSHA256 } from '../services/cryptoUtils';
-import { storeDocument } from '../services/blockchainService';
+import { storeDocument, isMetaMaskAvailable, isWalletConnected } from '../services/blockchainService';
 
 interface UploadedFile {
   id: string;
@@ -14,9 +15,12 @@ interface UploadedFile {
   hash?: string;
   encrypted: boolean;
   uploadDate: Date;
-  status: 'uploading' | 'success' | 'error';
+  status: 'uploading' | 'detecting-type' | 'auto-detected' | 'awaiting-type' | 'verifying' | 'verified' | 'verification-failed' | 'success' | 'error' | 'completed';
   error?: string;
   progress?: number;
+  documentType?: 'aadhaar' | 'pan' | 'other';
+  verificationData?: any;
+  qrCodeUrl?: string;
 }
 
 
@@ -28,16 +32,20 @@ const Upload: React.FC = () => {
   const [dragActive, setDragActive] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
   const [encryptFiles, setEncryptFiles] = useState(false);
+  const [encryptionKey, setEncryptionKey] = useState('');
+  const [useBlockchain, setUseBlockchain] = useState(true); // Enabled by default for development
   const [pinataConnected, setPinataConnected] = useState<boolean | null>(null);
+  const [walletConnected, setWalletConnected] = useState<boolean | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
-  // Test Pinata connection on component mount
+  // Test Pinata connection and check wallet on component mount
   React.useEffect(() => {
     testConnection();
+    checkWalletConnection();
   }, []);
 
   const testConnection = async () => {
@@ -46,6 +54,20 @@ const Upload: React.FC = () => {
       setPinataConnected(connected);
     } catch (error) {
       setPinataConnected(false);
+    }
+  };
+
+  const checkWalletConnection = async () => {
+    try {
+      const { isMetaMaskAvailable, isWalletConnected } = await import('../services/blockchainService');
+      if (isMetaMaskAvailable()) {
+        const connected = await isWalletConnected();
+        setWalletConnected(connected);
+      } else {
+        setWalletConnected(false);
+      }
+    } catch (error) {
+      setWalletConnected(false);
     }
   };
 
@@ -113,6 +135,15 @@ const Upload: React.FC = () => {
 
   // Upload files to IPFS
   const uploadFiles = async (fileList: File[], uploadedFiles: UploadedFile[]) => {
+    console.log('Upload started with blockchain toggle:', useBlockchain);
+    console.log('Wallet connected:', walletConnected);
+    
+    // Validate encryption settings
+    if (encryptFiles && (!encryptionKey.trim() || encryptionKey.length < 8)) {
+      alert('Please enter an encryption key (minimum 8 characters) when encryption is enabled.');
+      return;
+    }
+    
     setIsUploading(true);
 
     for (let i = 0; i < fileList.length; i++) {
@@ -139,7 +170,15 @@ const Upload: React.FC = () => {
 
         // Encrypt file if option is enabled
         if (encryptFiles) {
-          const encryptedData = await encryptFile(file, 'user-encryption-key');
+          if (!encryptionKey.trim()) {
+            throw new Error('Encryption key is required when encryption is enabled');
+          }
+          
+          if (encryptionKey.length < 8) {
+            throw new Error('Encryption key must be at least 8 characters long');
+          }
+          
+          const encryptedData = await encryptFile(file, encryptionKey.trim());
           // Convert encrypted string to blob
           const encryptedBlob = new Blob([encryptedData], { type: 'application/octet-stream' });
           fileToUpload = new File([encryptedBlob], file.name + '.encrypted', {
@@ -170,15 +209,77 @@ const Upload: React.FC = () => {
           }
         });
 
-        // Store document info on blockchain
-        await storeDocument(cid, hash);
-
-        // Update file status
+        // Update file with CID and set to detecting type
         setFiles(prev => prev.map(f => 
           f.id === uploadedFile.id 
-            ? { ...f, cid, hash, status: 'success' as const, progress: 100 }
+            ? { ...f, cid, hash, status: 'detecting-type' as const, progress: 85 }
             : f
         ));
+
+        // Automatically detect document type using OCR
+        try {
+          const typeResponse = await fetch('http://localhost:4000/upload/detect-type', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              ipfsCID: cid,
+              fileName: file.name
+            }),
+          });
+
+          const typeResult = await typeResponse.json();
+
+          if (typeResult.success && typeResult.documentType && typeResult.documentType !== 'unknown') {
+            // Auto-detected document type successfully
+            const detectedType = typeResult.documentType as 'aadhaar' | 'pan' | 'other';
+            
+            setFiles(prev => prev.map(f => 
+              f.id === uploadedFile.id 
+                ? { ...f, documentType: detectedType, status: 'auto-detected' as const, progress: 95 }
+                : f
+            ));
+
+            // If it's Aadhaar or PAN, automatically proceed with verification
+            if (detectedType === 'aadhaar' || detectedType === 'pan') {
+              console.log('🎯 Auto-detected document type, triggering verification:', { detectedType, fileId: uploadedFile.id });
+              
+              // Use the state update callback to get the current file data
+              setFiles(prev => {
+                const currentFile = prev.find(f => f.id === uploadedFile.id);
+                if (currentFile && currentFile.cid) {
+                  // Trigger verification with current file data
+                  setTimeout(() => handleDocumentTypeSelection(uploadedFile.id, detectedType, currentFile), 0);
+                }
+                return prev; // Don't change state, just use it to get current data
+              });
+            } else {
+              console.log('📄 Other document type detected, marking as completed:', detectedType);
+              // For 'other' documents, mark as completed
+              setFiles(prev => prev.map(f => 
+                f.id === uploadedFile.id 
+                  ? { ...f, status: 'completed' as const, progress: 100 }
+                  : f
+              ));
+            }
+          } else {
+            // Auto-detection failed, fall back to manual selection
+            setFiles(prev => prev.map(f => 
+              f.id === uploadedFile.id 
+                ? { ...f, status: 'awaiting-type' as const, progress: 90 }
+                : f
+            ));
+          }
+        } catch (typeError) {
+          console.error('Document type detection failed:', typeError);
+          // Fall back to manual type selection
+          setFiles(prev => prev.map(f => 
+            f.id === uploadedFile.id 
+              ? { ...f, status: 'awaiting-type' as const, progress: 90 }
+              : f
+          ));
+        }
 
       } catch (error) {
         console.error('Upload failed:', error);
@@ -191,6 +292,352 @@ const Upload: React.FC = () => {
     }
 
     setIsUploading(false);
+  };
+
+  // Handle document type selection and verification
+  const handleDocumentTypeSelection = async (fileId: string, documentType: 'aadhaar' | 'pan' | 'other', fileData?: UploadedFile) => {
+    console.log('🔍 Starting document verification for:', { fileId, documentType });
+    
+    setFiles(prev => prev.map(f => 
+      f.id === fileId 
+        ? { ...f, documentType, status: 'verifying' as const, progress: 95 }
+        : f
+    ));
+
+    // Use provided fileData or find from current state
+    const file = fileData || files.find(f => f.id === fileId);
+    if (!file || !file.cid) {
+      console.error('❌ File or CID not found for verification:', { 
+        fileId, 
+        hasFileData: !!fileData,
+        fileData: fileData,
+        hasFile: !!file,
+        file: file,
+        hasCid: !!file?.cid,
+        filesCount: files.length,
+        allFiles: files.map(f => ({ id: f.id, name: f.name, cid: f.cid }))
+      });
+      return;
+    }
+    
+    console.log('📄 File details for verification:', { 
+      name: file.name, 
+      cid: file.cid, 
+      documentType 
+    });
+
+    if (documentType === 'aadhaar' || documentType === 'pan') {
+      try {
+        console.log('🚀 Sending verification request to backend...', {
+          ipfsCID: file.cid,
+          documentType,
+          fileName: file.name
+        });
+        
+        // Send file to backend for verification
+        const response = await fetch('http://localhost:4000/upload', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            ipfsCID: file.cid,
+            documentType: documentType,
+            fileName: file.name
+          }),
+        });
+
+        console.log('📨 Backend response status:', response.status);
+        const result = await response.json();
+        console.log('📋 Backend verification result:', result);
+
+        if (result.success && result.verification.valid) {
+          // Verification successful
+          console.log('✅ Document verification successful!');
+          setFiles(prev => prev.map(f => 
+            f.id === fileId 
+              ? { 
+                  ...f, 
+                  status: 'verified' as const, 
+                  progress: 98,
+                  verificationData: result
+                }
+              : f
+          ));
+
+          // Now store on blockchain if enabled
+          await handleBlockchainStorage(fileId, file);
+        } else {
+          // Verification failed
+          console.log('❌ Document verification failed:', result.verification?.message);
+          setFiles(prev => prev.map(f => 
+            f.id === fileId 
+              ? { 
+                  ...f, 
+                  status: 'verification-failed' as const, 
+                  error: result.verification?.message || 'Document verification failed',
+                  progress: 0
+                }
+              : f
+          ));
+        }
+      } catch (error) {
+        console.error('💥 Error during verification:', error);
+        setFiles(prev => prev.map(f => 
+          f.id === fileId 
+            ? { 
+                ...f, 
+                status: 'verification-failed' as const, 
+                error: 'Failed to verify document: ' + (error instanceof Error ? error.message : 'Unknown error'),
+                progress: 0
+              }
+            : f
+        ));
+      }
+    } else {
+      // For 'other' type, skip verification but still generate QR and proceed to blockchain
+      setFiles(prev => prev.map(f => 
+        f.id === fileId 
+          ? { ...f, status: 'verified' as const, progress: 98 }
+          : f
+      ));
+      
+      // Go directly to blockchain storage (which will generate QR) - Use state callback
+      setFiles(prev => {
+        const currentFile = prev.find(f => f.id === fileId);
+        if (currentFile && currentFile.cid && currentFile.hash) {
+          setTimeout(() => handleBlockchainStorage(fileId, currentFile), 0);
+        }
+        return prev;
+      });
+    }
+  };
+
+  // Handle blockchain storage
+  const handleBlockchainStorage = async (fileId: string, fileData?: UploadedFile) => {
+    const startTime = performance.now();
+    console.log('🔗 Starting blockchain storage process...');
+    
+    // Use provided fileData or find from current state
+    const file = fileData || files.find(f => f.id === fileId);
+    if (!file || !file.cid || !file.hash) {
+      console.error('❌ Missing file data for blockchain storage:', { 
+        fileId, 
+        hasFileData: !!fileData,
+        fileData: fileData,
+        hasFile: !!file, 
+        file: file,
+        hasCid: !!file?.cid, 
+        hasHash: !!file?.hash,
+        filesCount: files.length,
+        allFiles: files.map(f => ({ id: f.id, name: f.name, cid: f.cid, hash: f.hash }))
+      });
+      return;
+    }
+
+    console.log('📄 File ready for blockchain storage:', { 
+      name: file.name, 
+      cid: file.cid.substring(0, 20) + '...', 
+      hash: file.hash.substring(0, 20) + '...',
+      documentType: file.documentType 
+    });
+
+    // Generate QR code for ALL documents (encrypted or not) - Start timing
+    let qrCodeUrl = '';
+    if (file.documentType && file.hash) {
+      const qrStartTime = performance.now();
+      console.log('🎨 Generating QR code...');
+      qrCodeUrl = await generateQRCode(file.documentType, file.hash, file.name);
+      const qrEndTime = performance.now();
+      console.log(`✅ QR code generated in ${(qrEndTime - qrStartTime).toFixed(2)}ms`);
+    }
+
+    if (useBlockchain) {
+      try {
+        const blockchainStartTime = performance.now();
+        console.log('🔗 Attempting to store document on blockchain...');
+        console.log('📋 Blockchain storage details:', { cid: file.cid, hash: file.hash });
+        
+        const receipt = await storeDocument(file.cid, file.hash);
+        const blockchainEndTime = performance.now();
+        
+        console.log('✅ Document stored on blockchain successfully:', {
+          transactionHash: receipt.hash,
+          blockNumber: receipt.blockNumber,
+          gasUsed: receipt.gasUsed?.toString(),
+          timeElapsed: `${(blockchainEndTime - blockchainStartTime).toFixed(2)}ms`
+        });
+        
+        setFiles(prev => prev.map(f => 
+          f.id === fileId 
+            ? { ...f, status: 'success' as const, progress: 100, qrCodeUrl }
+            : f
+        ));
+        
+        const totalTime = performance.now() - startTime;
+        console.log(`🏁 Total blockchain storage process completed in ${totalTime.toFixed(2)}ms`);
+      } catch (error) {
+        const errorTime = performance.now() - startTime;
+        console.error('❌ Blockchain storage failed after', `${errorTime.toFixed(2)}ms:`, error);
+        
+        setFiles(prev => prev.map(f => 
+          f.id === fileId 
+            ? { 
+                ...f, 
+                status: 'error' as const, 
+                error: 'Blockchain storage failed: ' + (error instanceof Error ? error.message : 'Unknown error'),
+                progress: 90,
+                qrCodeUrl
+              }
+            : f
+        ));
+      }
+    } else {
+      console.log('⚠️ Blockchain disabled, skipping blockchain storage');
+      // If blockchain is disabled, mark as success but still provide QR
+      setFiles(prev => prev.map(f => 
+        f.id === fileId 
+          ? { ...f, status: 'success' as const, progress: 100, qrCodeUrl }
+          : f
+      ));
+      
+      const totalTime = performance.now() - startTime;
+      console.log(`🏁 Non-blockchain process completed in ${totalTime.toFixed(2)}ms`);
+    }
+  };
+
+  // Generate QR Code for encrypted documents
+  const generateQRCode = async (documentType: string, hash: string, fileName: string): Promise<string> => {
+    try {
+      let qrData = '';
+      let displayName = '';
+      
+      if (documentType === 'aadhaar') {
+        qrData = `aadhaar:${hash}`;
+        displayName = 'Aadhaar Document';
+      } else if (documentType === 'pan') {
+        qrData = `pan:${hash}`;
+        displayName = 'PAN Document';
+      } else {
+        qrData = `${fileName}:${hash}`;
+        displayName = fileName;
+      }
+      
+      // Generate QR code with better settings for complex data
+      const qrCodeDataUrl = await QRCode.toDataURL(qrData, {
+        width: 300, // Larger size for better readability
+        margin: 3,
+        color: {
+          dark: '#000000',
+          light: '#FFFFFF'
+        },
+        errorCorrectionLevel: 'H' // High error correction for complex data
+      });
+      
+      // Create a canvas to add label and improve presentation
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return qrCodeDataUrl;
+      
+      const qrImage = new Image();
+      qrImage.onload = () => {
+        // Set canvas size (QR code + space for text)
+        canvas.width = 300;
+        canvas.height = 380; // Extra space for text
+        
+        // White background
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // Draw QR code
+        ctx.drawImage(qrImage, 0, 0, 300, 300);
+        
+        // Add title
+        ctx.fillStyle = '#000000';
+        ctx.font = 'bold 16px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('📄 Document Verification QR', 150, 325);
+        
+        // Add document name
+        ctx.font = '14px Arial';
+        ctx.fillText(displayName, 150, 345);
+        
+        // Add hash preview (first 16 chars)
+        ctx.font = '10px monospace';
+        ctx.fillText(`Hash: ${hash.substring(0, 16)}...`, 150, 365);
+      };
+      qrImage.src = qrCodeDataUrl;
+      
+      return qrCodeDataUrl;
+    } catch (error) {
+      console.error('Failed to generate QR code:', error);
+      return '';
+    }
+  };
+
+  // Download QR Code
+  const downloadQRCode = (qrCodeUrl: string, fileName: string) => {
+    const link = document.createElement('a');
+    link.href = qrCodeUrl;
+    link.download = `${fileName}-qr-code.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Download original file from IPFS
+  const downloadFile = async (cid: string, fileName: string, fileType: string) => {
+    try {
+      // Use Pinata gateway to fetch the file
+      const ipfsUrl = `https://gateway.pinata.cloud/ipfs/${cid}`;
+      
+      // Fetch the file as blob
+      const response = await fetch(ipfsUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch file: ${response.statusText}`);
+      }
+      
+      const blob = await response.blob();
+      
+      // Create download link
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      
+      // Ensure proper file extension
+      const fileExtension = fileName.includes('.') 
+        ? '' 
+        : getFileExtension(fileType);
+      
+      link.download = `${fileName}${fileExtension}`;
+      document.body.appendChild(link);
+      link.click();
+      
+      // Cleanup
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error downloading file:', error);
+      alert('Failed to download file. Please try again.');
+    }
+  };
+
+  // Helper function to get file extension based on MIME type
+  const getFileExtension = (mimeType: string): string => {
+    const mimeToExt: Record<string, string> = {
+      'application/pdf': '.pdf',
+      'image/jpeg': '.jpg',
+      'image/jpg': '.jpg',
+      'image/png': '.png',
+      'image/gif': '.gif',
+      'application/msword': '.doc',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+      'text/plain': '.txt',
+      'application/zip': '.zip',
+      'application/x-zip-compressed': '.zip'
+    };
+    
+    return mimeToExt[mimeType] || '';
   };
 
   // Camera functions
@@ -362,9 +809,96 @@ const Upload: React.FC = () => {
                   <div className="text-sm text-gray-400">Encrypt files with AES-256 before upload</div>
                 </div>
               </label>
+              
+              {/* Encryption Key Input - Only show when encryption is enabled */}
+              {encryptFiles && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="mt-4 space-y-2"
+                >
+                  <label className="block text-sm font-medium text-gray-300">
+                    Encryption Key
+                  </label>
+                  <input
+                    type="password"
+                    value={encryptionKey}
+                    onChange={(e) => setEncryptionKey(e.target.value)}
+                    placeholder="Enter a strong encryption key"
+                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none"
+                  />
+                  <div className="text-xs text-gray-500">
+                    💡 <strong>Remember this key!</strong> You'll need it to decrypt your files later.
+                  </div>
+                  {encryptionKey.length > 0 && encryptionKey.length < 8 && (
+                    <div className="text-xs text-yellow-400">
+                      ⚠️ Key should be at least 8 characters for better security
+                    </div>
+                  )}
+                </motion.div>
+              )}
+            </div>
+
+            {/* Blockchain Toggle */}
+            <div className="bg-gray-800/50 rounded-xl p-4 backdrop-blur-sm border border-gray-700">
+              <label className="flex items-center gap-4 cursor-pointer">
+                <div className="relative">
+                  <div 
+                    className={`w-12 h-6 rounded-full transition-all duration-300 ${
+                      useBlockchain ? 'bg-gradient-to-r from-purple-500 to-blue-600' : 'bg-gray-600'
+                    }`}
+                  >
+                    <motion.div 
+                      className="w-5 h-5 bg-white rounded-full shadow-lg absolute top-0.5"
+                      animate={{ x: useBlockchain ? 26 : 2 }}
+                      transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                    />
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={useBlockchain}
+                    onChange={(e) => setUseBlockchain(e.target.checked)}
+                    className="sr-only"
+                  />
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    {useBlockchain && (
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0.5 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="text-white text-xs font-bold"
+                      >
+                        ⛓️
+                      </motion.div>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-gray-200 font-medium">Store on Blockchain</span>
+                    {walletConnected === false && (
+                      <span className="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-1 rounded-full">
+                        MetaMask Required
+                      </span>
+                    )}
+                    {walletConnected === true && (
+                      <span className="text-xs bg-green-500/20 text-green-400 px-2 py-1 rounded-full">
+                        Wallet Connected
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-sm text-gray-400">
+                    Create immutable blockchain record for verification
+                    <div className="text-xs text-gray-500 mt-1">
+                      📋 All documents get QR codes regardless of this setting
+                      <br />
+                      ⛓️ Enable this to also store document hashes on blockchain for extra security
+                    </div>
+                  </div>
+                </div>
+              </label>
             </div>
           </motion.div>
-
           {/* Upload Area */}
           <motion.div
             className={`relative border-2 border-dashed rounded-2xl p-12 text-center transition-all duration-300 overflow-hidden ${
@@ -517,6 +1051,86 @@ const Upload: React.FC = () => {
                       {file.status === 'success' && file.cid && (
                         <div className="text-xs text-green-400 mt-1">
                           CID: {file.cid.substring(0, 20)}...
+                          {file.qrCodeUrl && (
+                            <div className="mt-2">
+                              <div className="flex items-center gap-2">
+                                <img 
+                                  src={file.qrCodeUrl} 
+                                  alt="QR Code" 
+                                  className="w-16 h-16 border border-gray-600 rounded"
+                                />
+                                <div>
+                                  <div className="text-blue-400 text-xs font-medium">
+                                    � Document QR Code
+                                    {file.encrypted && <span className="text-yellow-400 ml-1">🔐</span>}
+                                  </div>
+                                  <div className="flex gap-2 mt-1">
+                                    <button
+                                      onClick={() => downloadQRCode(file.qrCodeUrl!, file.name)}
+                                      className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded"
+                                    >
+                                      Download QR
+                                    </button>
+                                    <button
+                                      onClick={() => downloadFile(file.cid!, file.name, file.type)}
+                                      className="text-xs bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded"
+                                    >
+                                      Download File
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="text-xs text-gray-400 mt-1">
+                                QR contains: {file.documentType === 'aadhaar' ? 'aadhaar' : 
+                                           file.documentType === 'pan' ? 'pan' : 
+                                           file.name}:{file.hash?.substring(0, 10)}...
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      
+                      {file.status === 'awaiting-type' && (
+                        <div className="mt-2">
+                          <div className="text-xs text-yellow-400 mb-2">Select document type:</div>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => handleDocumentTypeSelection(file.id, 'aadhaar')}
+                              className="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
+                            >
+                              Aadhaar
+                            </button>
+                            <button
+                              onClick={() => handleDocumentTypeSelection(file.id, 'pan')}
+                              className="px-3 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700"
+                            >
+                              PAN
+                            </button>
+                            <button
+                              onClick={() => handleDocumentTypeSelection(file.id, 'other')}
+                              className="px-3 py-1 bg-gray-600 text-white text-xs rounded hover:bg-gray-700"
+                            >
+                              Other
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {file.status === 'verifying' && (
+                        <div className="text-xs text-blue-400 mt-1">
+                          Verifying document...
+                        </div>
+                      )}
+                      
+                      {file.status === 'verified' && (
+                        <div className="text-xs text-green-400 mt-1">
+                          Document verified ✅ - Processing blockchain storage...
+                        </div>
+                      )}
+                      
+                      {file.status === 'verification-failed' && (
+                        <div className="text-xs text-red-400 mt-1">
+                          Verification failed: {file.error}
                         </div>
                       )}
                       
@@ -529,15 +1143,31 @@ const Upload: React.FC = () => {
                   </div>
                   
                   <div className="flex items-center gap-3">
-                    {file.status === 'uploading' && (
+                    {(file.status === 'uploading' || file.status === 'verifying' || file.status === 'detecting-type') && (
                       <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                    )}
+                    
+                    {file.status === 'awaiting-type' && (
+                      <div className="text-yellow-500 text-xl">⏳</div>
+                    )}
+
+                    {file.status === 'auto-detected' && (
+                      <div className="text-green-500 text-xl">🔍</div>
+                    )}
+
+                    {file.status === 'completed' && (
+                      <div className="text-blue-500 text-xl">📄</div>
+                    )}
+                    
+                    {file.status === 'verified' && (
+                      <div className="text-blue-500 text-xl">🔍</div>
                     )}
                     
                     {file.status === 'success' && (
                       <div className="text-green-500 text-xl">✅</div>
                     )}
                     
-                    {file.status === 'error' && (
+                    {(file.status === 'error' || file.status === 'verification-failed') && (
                       <div className="text-red-500 text-xl">❌</div>
                     )}
                     
@@ -564,15 +1194,21 @@ const Upload: React.FC = () => {
                 <div className="font-medium">{files.length}</div>
               </div>
               <div>
-                <div className="text-gray-400">Successful</div>
+                <div className="text-gray-400">Verified</div>
                 <div className="font-medium text-green-400">
-                  {files.filter(f => f.status === 'success').length}
+                  {files.filter(f => f.status === 'success' || f.status === 'verified' || f.status === 'completed').length}
                 </div>
               </div>
               <div>
                 <div className="text-gray-400">Failed</div>
                 <div className="font-medium text-red-400">
-                  {files.filter(f => f.status === 'error').length}
+                  {files.filter(f => f.status === 'error' || f.status === 'verification-failed').length}
+                </div>
+              </div>
+              <div>
+                <div className="text-gray-400">Encrypted</div>
+                <div className="font-medium text-yellow-400">
+                  {files.filter(f => f.encrypted).length}
                 </div>
               </div>
               <div>
@@ -586,6 +1222,7 @@ const Upload: React.FC = () => {
         )}
       </div>
     </div>
+   
     </div>
   );
 };

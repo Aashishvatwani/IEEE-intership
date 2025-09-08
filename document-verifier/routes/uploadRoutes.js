@@ -1,7 +1,7 @@
 import express from "express";
 import multer from "multer";
 
-import { uploadDocument } from "../controllers/uploadController.js";
+import { uploadDocument, detectDocumentType } from "../controllers/uploadController.js";
 
 const router = express.Router();
 
@@ -31,7 +31,17 @@ const fileFilter = (req, file, cb) => {
 
 const upload = multer({ storage, fileFilter });
 
-// ✅ Use the correct controller function name
-router.post("/", upload.single("document"), uploadDocument);
+// Document type detection endpoint
+router.post("/detect-type", detectDocumentType);
+
+// Handle both file uploads and IPFS CID verification
+router.post("/", (req, res, next) => {
+  // If request has ipfsCID in body, skip multer
+  if (req.body && req.body.ipfsCID) {
+    return uploadDocument(req, res);
+  }
+  // Otherwise use multer for file upload
+  upload.single("document")(req, res, next);
+}, uploadDocument);
 
 export default router;

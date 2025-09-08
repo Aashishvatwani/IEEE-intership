@@ -6,6 +6,7 @@ import dotenv from "dotenv";
 import uploadRoutes from "./routes/uploadRoutes.js";
 import aadhaarRoutes from "./routes/aadhaarRoutes.js";
 import panRoutes from "./routes/panRoutes.js";
+import qrRoutes from "./routes/qrRoutes.js";
 
 // Load .env variables
 dotenv.config();
@@ -27,6 +28,7 @@ mongoose.connection.on("error", (err) => console.error("❌ MongoDB error:", err
 app.use("/upload", uploadRoutes);
 app.use("/aadhaar", aadhaarRoutes);
 app.use("/pan", panRoutes);
+app.use("/qr", qrRoutes);
 
 app.get("/", (req, res) => res.send("🚀 Document Verifier API running"));
 

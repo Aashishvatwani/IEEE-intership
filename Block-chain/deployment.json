@@ -1,0 +1,7 @@
+{
+  "address": "0xE7299D52290B8E115c5145A2cd09693E7A6b8d79",
+  "abi": [
+    "function storeDocument(string memory ipfsCID, bytes32 documentHash) public",
+    "function verifyDocument(bytes32 documentHash) public view returns (bool, string memory, address, uint256)"
+  ]
+}

@@ -1,6 +1,7 @@
 import React from 'react';
 import { motion, useAnimation } from 'framer-motion';
 import { useInView } from 'react-intersection-observer';
+import { useNavigate } from 'react-router-dom';
 
 // --- ICONS ---
 // Using functional components for SVG icons for better reusability and clarity.
@@ -90,10 +91,7 @@ const HeroVisual: React.FC = () => (
 // --- HERO SECTION ---
 const HeroSection: React.FC = () => {
   // Mock navigation for demonstration purposes.
-  const handleNavigate = (path: string) => {
-    console.log(`Navigating to ${path}`);
-    // In a real app, this would be handled by a router.
-  };
+  const Navigate=useNavigate();
 
   return (
     <section className="relative min-h-screen flex items-center justify-center px-4 sm:px-6 py-12">
@@ -129,6 +127,7 @@ const HeroSection: React.FC = () => {
           >
             Revolutionize document storage with <strong>blockchain technology</strong>. Secure, verify, and manage your important files with military-grade encryption and IPFS decentralization.
           </motion.p>
+
           
           <motion.div 
             variants={fadeInUp}
@@ -136,10 +135,10 @@ const HeroSection: React.FC = () => {
           >
             <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
               <button
-                onClick={() => handleNavigate('/upload')}
+                onClick={() => Navigate('/upload')}
                 className="group w-full sm:w-auto relative px-8 py-4 bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl font-semibold text-lg overflow-hidden transition-all duration-300 hover:from-blue-700 hover:to-purple-700 shadow-lg hover:shadow-2xl"
               >
-                <span className="relative z-10 flex items-center justify-center gap-2">
+                <span className="relative z-10 flex items-center justify-center gap-2" >
                   <span>📁 Upload Documents</span>
                   <svg className="w-5 h-5 group-hover:translate-x-1 transition-transform" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clipRule="evenodd" />

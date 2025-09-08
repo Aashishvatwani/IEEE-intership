@@ -4,7 +4,11 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "npx hardhat test",
+    "compile": "npx hardhat compile",
+    "deploy": "npx hardhat run scripts/deploy.ts --network localhost",
+    "node": "npx hardhat node",
+    "clean": "npx hardhat clean"
   },
   "keywords": [],
   "author": "",
